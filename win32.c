@@ -9,6 +9,8 @@
 #include <windows.h>
 #include <mmsystem.h>
 
+#define INET_ADDRSTRLEN  22
+
 static enet_uint32 timeBase = 0;
 
 int
@@ -88,30 +90,38 @@ enet_address_set_host_ip (ENetAddress * address, const char * name)
 int
 enet_address_set_host (ENetAddress * address, const char * name)
 {
-    struct hostent * hostEntry;
+    struct addrinfo *result, *iterator;
 
-    hostEntry = gethostbyname (name);
-    if (hostEntry == NULL ||
-        hostEntry -> h_addrtype != AF_INET)
-      return enet_address_set_host_ip (address, name);
+    if (getaddrinfo(name, NULL, NULL, &result) != 0) {
+        return -1;
+    }
+    for (iterator = result; iterator != NULL; iterator = iterator->ai_next) {
+        if (iterator->ai_family == AF_INET) {
+            struct sockaddr_in* sin = (struct sockaddr_in*)iterator;
 
-    address -> host = * (enet_uint32 *) hostEntry -> h_addr_list [0];
+            address->host = *(enet_uint32*)sin->sin_addr.s_addr;
 
-    return 0;
+            return 0;
+        }
+    }
+
+    return -1;
 }
 
 int
 enet_address_get_host_ip (const ENetAddress * address, char * name, size_t nameLength)
 {
-    char * addr = inet_ntoa (* (struct in_addr *) & address -> host);
-    if (addr == NULL)
+    char addr[INET_ADDRSTRLEN];
+
+    memset(&addr, 0, INET_ADDRSTRLEN);
+
+    if (inet_ntop(AF_INET, *(struct in_addr*)&address->host, &addr, INET_ADDRSTRLEN) == NULL)
         return -1;
     else
     {
-        size_t addrLen = strlen(addr);
-        if (addrLen >= nameLength)
+        if (INET_ADDRSTRLEN >= nameLength)
           return -1;
-        memcpy (name, addr, addrLen + 1);
+        memcpy (name, &addr, INET_ADDRSTRLEN);
     }
     return 0;
 }
@@ -119,21 +129,23 @@ enet_address_get_host_ip (const ENetAddress * address, char * name, size_t nameL
 int
 enet_address_get_host (const ENetAddress * address, char * name, size_t nameLength)
 {
-    struct in_addr in;
-    struct hostent * hostEntry;
- 
-    in.s_addr = address -> host;
+    struct sockaddr_in addr;
+    char host[50];
+
+    memset(&addr, 0, sizeof(struct sockaddr_in));
+    memset(host, 0, 50);
+
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = address->host;
+    addr.sin_port = ENET_HOST_TO_NET_16(address->port);
     
-    hostEntry = gethostbyaddr ((char *) & in, sizeof (struct in_addr), AF_INET);
-    if (hostEntry == NULL)
-      return enet_address_get_host_ip (address, name, nameLength);
-    else
-    {
-       size_t hostLen = strlen (hostEntry -> h_name);
-       if (hostLen >= nameLength)
-         return -1;
-       memcpy (name, hostEntry -> h_name, hostLen + 1);
+    if (getnameinfo(&addr, sizeof(struct sockaddr_in), &host, 50, NULL, 0, NI_NAMEREQD) != 0) {
+        return -1;
     }
+    if (50 >= nameLength) {
+        return -1;
+    }
+    memcpy(name, &host, 50);
 
     return 0;
 }
