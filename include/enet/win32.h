@@ -16,6 +16,8 @@
 #endif
 #endif
 
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+
 #include <stdlib.h>
 #include <winsock2.h>
 
